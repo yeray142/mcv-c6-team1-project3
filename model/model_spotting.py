@@ -41,7 +41,7 @@ class Model(BaseRGBModel):
             self._features = features
 
             # MLP for classification
-            self._fc = FCLayers(self._d, args.num_classes)
+            self._fc = FCLayers(self._d, args.num_classes+1) # +1 for background class (we now perform per-frame classification with softmax, therefore we have the extra background class)
 
             #Augmentations and crop
             self.augmentation = T.Compose([
@@ -71,11 +71,8 @@ class Model(BaseRGBModel):
                 x.view(-1, channels, height, width)
             ).reshape(batch_size, clip_len, self._d) #B, T, D
 
-            #Max pooling
-            im_feat = torch.max(im_feat, dim=1)[0] #B, D
-
             #MLP
-            im_feat = self._fc(im_feat) #B, num_classes
+            im_feat = self._fc(im_feat) #B, T, num_classes+1
 
             return im_feat 
         
@@ -123,12 +120,14 @@ class Model(BaseRGBModel):
             for batch_idx, batch in enumerate(tqdm(loader)):
                 frame = batch['frame'].to(self.device).float()
                 label = batch['label']
-                label = label.to(self.device).float()
+                label = label.to(self.device).long()
 
                 with torch.cuda.amp.autocast():
                     pred = self._model(frame)
-                    loss = F.binary_cross_entropy_with_logits(
-                            pred, label)
+                    pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
+                    label = label.view(-1) # B*T
+                    loss = F.cross_entropy(
+                            pred, label, reduction='mean') # B*T
 
                 if optimizer is not None:
                     step(optimizer, scaler, loss,
@@ -154,6 +153,6 @@ class Model(BaseRGBModel):
                 pred = self._model(seq)
 
             # apply sigmoid
-            pred = torch.sigmoid(pred)
+            pred = torch.softmax(pred, dim=-1)
             
             return pred.cpu().numpy()
