@@ -115,6 +115,8 @@ class Model(BaseRGBModel):
             optimizer.zero_grad()
             self._model.train()
 
+        weights = torch.tensor([1.0] + [5.0] * (self._num_classes), dtype=torch.float32)
+
         epoch_loss = 0.
         with torch.no_grad() if optimizer is None else nullcontext():
             for batch_idx, batch in enumerate(tqdm(loader)):
@@ -127,7 +129,7 @@ class Model(BaseRGBModel):
                     pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
                     label = label.view(-1) # B*T
                     loss = F.cross_entropy(
-                            pred, label, reduction='mean') # B*T
+                            pred, label, reduction='mean', weight = weights)
 
                 if optimizer is not None:
                     step(optimizer, scaler, loss,
