@@ -1,11 +1,12 @@
 {
-    "frame_dir": "/data-local/data1-ssd/axesparraguera/SoccerNetBallFrames224",
-    "save_dir": "/data-slow/guest/axesparraguera/CVMaster",
-    "labels_dir": "/data-net/datasets/SoccerNetv2/Spotting_Ball/spotting-ball-2024",
-    "store_mode": "load",
+    "frame_dir": "/data-fast/data-server/aclapes/SN-BAS-2025_frames/398x224",
+    "save_dir": "/data-fast/data-server/aclapes/SN-BAS-2025_savedata",
+    "labels_dir": "/data-fast/data-server/aclapes/SN-BAS-2025",
+    "store_mode": "store",
     "task": "classification",
     "batch_size": 4,
     "clip_len": 50,
+    "stride": 2,
     "dataset": "soccernetball",
     "epoch_num_frames": 500000,
     "feature_arch": "rny002",
@@ -14,5 +15,6 @@
     "num_epochs": 35,
     "warm_up_epochs": 3,
     "only_test": false,
+    "device": "cuda",
     "num_workers": 4
 }

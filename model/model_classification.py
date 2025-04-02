@@ -40,9 +40,6 @@ class Model(BaseRGBModel):
 
             self._features = features
 
-            #GRU layer
-            self._gru = nn.GRU(input_size = self._d, hidden_size = self._d, num_layers = 1, batch_first = True)
-
             # MLP for classification
             self._fc = FCLayers(self._d, args.num_classes)
 
@@ -74,9 +71,6 @@ class Model(BaseRGBModel):
                 x.view(-1, channels, height, width)
             ).reshape(batch_size, clip_len, self._d) #B, T, D
 
-            #GRU
-            im_feat, _ = self._gru(im_feat) #B, T, D
-
             #Max pooling
             im_feat = torch.max(im_feat, dim=1)[0] #B, D
 
@@ -102,17 +96,17 @@ class Model(BaseRGBModel):
             print('Model params:',
                 sum(p.numel() for p in self.parameters()))
 
-    def __init__(self, device='cuda', args=None):
-        self.device = device
+    def __init__(self, args=None):
+        self.device = "cpu"
+        if torch.cuda.is_available() and ("device" in args) and (args.device == "cuda"):
+            self.device = "cuda"
+
         self._model = Model.Impl(args=args)
         self._model.print_stats()
         self._args = args
 
-        self._model.to(device)
-        if args.task == 'spotting':
-            self._num_classes = args.num_classes + 1
-        elif args.task == 'classification':
-            self._num_classes = args.num_classes
+        self._model.to(self.device)
+        self._num_classes = args.num_classes
 
     def epoch(self, loader, optimizer=None, scaler=None, lr_scheduler=None):
 
@@ -133,17 +127,7 @@ class Model(BaseRGBModel):
 
                 with torch.cuda.amp.autocast():
                     pred = self._model(frame)
-
-                    loss = 0.
-                    
-                    if self._args.task == 'spotting':
-                        predictions = pred.reshape(-1, self._num_classes)
-
-                        loss += F.cross_entropy(
-                            predictions, label)
-
-                    elif self._args.task == 'classification':
-                        loss += F.binary_cross_entropy_with_logits(
+                    loss = F.binary_cross_entropy_with_logits(
                             pred, label)
 
                 if optimizer is not None:
@@ -170,7 +154,6 @@ class Model(BaseRGBModel):
                 pred = self._model(seq)
 
             # apply sigmoid
-            if self._args.task == 'classification':
-                pred = torch.sigmoid(pred)
+            pred = torch.sigmoid(pred)
             
             return pred.cpu().numpy()

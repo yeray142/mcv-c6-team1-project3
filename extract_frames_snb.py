@@ -17,21 +17,26 @@ python extract_frames_snb.py --video_dir video_dir
         --sample_fps 25 --num_workers 5
 '''
 
+# Constants
 FRAME_RETRY_THRESHOLD = 1000
-TARGET_HEIGHT = 224
-TARGET_WIDTH = 398
+DEFAULT_SAMPLE_FPS = 25
+DEFAULT_HEIGHT = 224
+DEFAULT_WIDTH = 398
+
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--video_dir', help='Path to the downloaded videos')
     parser.add_argument('-o', '--out_dir',
                         help='Path to write frames. Dry run if None.')
-    parser.add_argument('--sample_fps', type=int, default=25)
-    parser.add_argument('--recalc_fps', action='store_true')
+    parser.add_argument('--sample_fps', type=int, default=DEFAULT_SAMPLE_FPS)
+    parser.add_argument('--height', type=int, default=DEFAULT_HEIGHT)
+    parser.add_argument('--width', type=int, default=DEFAULT_WIDTH)
+    parser.add_argument('--recalc_fps', action='store_true') # Debug option
     parser.add_argument('-j', '--num_workers', type=int,
                         default=os.cpu_count() // 4)
-    return parser.parse_args()
 
+    return parser.parse_args()
 
 def get_duration(video_path):
     # Copied from SoccerNet repo
@@ -39,7 +44,7 @@ def get_duration(video_path):
 
 
 def worker(args):
-    video_name, video_path, out_dir, sample_fps = args
+    video_name, video_path, out_dir, width, height, sample_fps, recalc_fps = args
 
     def get_stride(src_fps):
         if sample_fps <= 0:
@@ -55,8 +60,8 @@ def worker(args):
     w = int(vc.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(vc.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    oh = TARGET_HEIGHT
-    ow = TARGET_WIDTH
+    oh = height
+    ow = width
 
     time_in_s = get_duration(video_path)
 
@@ -105,12 +110,11 @@ def worker(args):
                 break
 
             if i % stride == 0:
-                if not RECALC_FPS_ONLY:
+                if not recalc_fps:
                     if frame.shape[0] != oh or frame.shape[1] != ow:
                         frame = cv2.resize(frame, (ow, oh))
                     if out_dir is not None:
-                        frame_path = os.path.join(
-                            out_dir, 'frame{}.jpg'.format(i))
+                        frame_path = os.path.join(out_dir, 'frame{}.jpg'.format(i))
                         cv2.imwrite(frame_path, frame)
             i += 1
     vc.release()
@@ -125,41 +129,47 @@ def worker(args):
 def main(args):
     video_dir = args.video_dir
     out_dir = args.out_dir
+    width = args.width
+    height = args.height
     sample_fps = args.sample_fps
     recalc_fps = args.recalc_fps
     num_workers = args.num_workers
 
-    global RECALC_FPS_ONLY
-    RECALC_FPS_ONLY = recalc_fps
+    # global RECALC_FPS_ONLY
+    # RECALC_FPS_ONLY = recalc_fps
 
     worker_args = []
     for league in os.listdir(video_dir):
-        if '.zip' in league:
-            continue
         league_dir = os.path.join(video_dir, league)
+        if os.path.isfile(league_dir) or league == "ExtraLabelsActionSpotting500games":
+            continue
         for season in os.listdir(league_dir):
             season_dir = os.path.join(league_dir, season)
+            if os.path.isfile(season_dir):
+                continue
             for game in os.listdir(season_dir):
                 game_dir = os.path.join(season_dir, game)
+                if os.path.isfile(game_dir):
+                    continue
                 for video_file in os.listdir(game_dir):
                     if (video_file.endswith('720p.mp4') | video_file.endswith('720p.mkv')): # Only 720p videos
                         worker_args.append((
                             os.path.join(league, season, game, video_file),
                             os.path.join(game_dir, video_file),
-                            os.path.join(
-                                out_dir, league, season, game
-                            ) if out_dir else None,
-                            sample_fps
+                            os.path.join(out_dir, league, season, game) if out_dir else None,
+                            width,
+                            height,
+                            sample_fps,
+                            recalc_fps
                         ))
 
     with Pool(num_workers) as p:
-        for _ in tqdm(p.imap_unordered(worker, worker_args),
-                    total=len(worker_args)):
+        for _ in tqdm(p.imap_unordered(worker, worker_args), total=len(worker_args)):
             pass
     print('Done!')
 
 
 if __name__ == '__main__':
     args = get_args()
-    args.out_dir = args.out_dir + str(TARGET_HEIGHT)
+    args.out_dir = os.path.join(args.out_dir, f"{args.width}x{args.height}")
     main(args)

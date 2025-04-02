@@ -57,12 +57,8 @@ class ActionSpotDataset(Dataset):
         assert clip_len > 0
         self._stride = stride
         assert stride > 0
-        if overlap != 1:
-            self._overlap = int((1-overlap) * clip_len * stride)
-        else:
-            self._overlap = 1
         assert overlap >= 0 and overlap <= 1
-
+        self._clip_sampling_step = 1 if overlap == 1 else int((1 - overlap) * clip_len * stride)
         self._pad_len = pad_len
         assert pad_len >= 0     
         self._labels_dir = labels_dir
@@ -97,7 +93,7 @@ class ActionSpotDataset(Dataset):
             video_half = 1
             labels_file = load_json(os.path.join(self._labels_dir, video['video'] + '/Labels-ball.json'))['annotations']
 
-            for base_idx in range(-self._pad_len * self._stride, max(0, video_len - 1 + (2 * self._pad_len - self._clip_len) * self._stride), self._overlap):
+            for base_idx in range(-self._pad_len * self._stride, max(0, video_len - 1 + (2 * self._pad_len - self._clip_len) * self._stride), self._clip_sampling_step):
 
                 frames_paths = self._frame_reader.load_paths(video['video'], base_idx, base_idx + self._clip_len * self._stride, stride=self._stride)
 

@@ -17,9 +17,9 @@ from tabulate import tabulate
 
 #Local imports
 from util.io import load_json, store_json
-from util.eval import evaluate
+from util.eval_classification import evaluate
 from dataset.datasets import get_datasets
-from model.model import Model
+from model.model_classification import Model
 
 
 def get_args():
@@ -47,6 +47,7 @@ def update_args(args, config):
     args.num_epochs = config['num_epochs']
     args.warm_up_epochs = config['warm_up_epochs']
     args.only_test = config['only_test']
+    args.device = config['device']
     args.num_workers = config['num_workers']
 
     return args
@@ -63,7 +64,7 @@ def get_lr_scheduler(args, optimizer, num_steps_per_epoch):
 
 
 def main(args):
-    #Set seed
+    # Set seed
     print('Setting seed to: ', args.seed)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
@@ -81,7 +82,7 @@ def main(args):
     classes, train_data, val_data, test_data = get_datasets(args)
 
     if args.store_mode == 'store':
-        print('Datasets have been stored correctly! Stop training here and rerun.')
+        print('Datasets have been stored correctly! Re-run changing "mode" to "load" in the config JSON.')
         sys.exit('Datasets have correctly been stored! Stop training here and rerun with load mode.')
     else:
         print('Datasets have been loaded from previous versions correctly!')
@@ -93,12 +94,16 @@ def main(args):
     train_loader = DataLoader(
         train_data, shuffle=False, batch_size=args.batch_size,
         pin_memory=True, num_workers=args.num_workers,
-        prefetch_factor=2, worker_init_fn=worker_init_fn)
+        prefetch_factor=(2 if args.num_workers > 0 else None),
+        worker_init_fn=worker_init_fn
+    )
         
     val_loader = DataLoader(
         val_data, shuffle=False, batch_size=args.batch_size,
         pin_memory=True, num_workers=args.num_workers,
-        prefetch_factor=2, worker_init_fn=worker_init_fn)
+        prefetch_factor=(2 if args.num_workers > 0 else None),
+        worker_init_fn=worker_init_fn
+    )
 
     # Model
     model = Model(args=args)
@@ -141,40 +146,32 @@ def main(args):
 
             if args.save_dir is not None:
                 os.makedirs(args.save_dir, exist_ok=True)
-                store_json(os.path.join(args.save_dir, 'loss.json'), losses,
-                            pretty=True)
+                store_json(os.path.join(args.save_dir, 'loss.json'), losses, pretty=True)
 
                 if better:
-                    torch.save(
-                        model.state_dict(),
-                        os.path.join(ckpt_dir, 'checkpoint_best.pt'))
+                    torch.save( model.state_dict(), os.path.join(ckpt_dir, 'checkpoint_best.pt') )
 
     print('START INFERENCE')
     model.load(torch.load(os.path.join(ckpt_dir, 'checkpoint_best.pt')))
 
     # Evaluation on test split
-    auc_roc  = evaluate(model, test_data)
-    
-    # Percentage
-    auc_roc = auc_roc * 100
+    ap_score = evaluate(model, test_data)
 
     # Report results per-class in table
     table = []
     for i, class_name in enumerate(classes.keys()):
-        table.append([class_name, f"{auc_roc[i]:.2f}"])
+        table.append([class_name, f"{ap_score[i]*100:.2f}"])
 
     headers = ["Class", "Average Precision"]
     print(tabulate(table, headers, tablefmt="grid"))
 
     # Report average results in table
-    avg_table = [["Average", f"{np.mean(auc_roc):.2f}"]]
+    avg_table = [["Average", f"{np.mean(ap_score)*100:.2f}"]]
     headers = ["", "Average Precision"]
 
     print(tabulate(avg_table, headers, tablefmt="grid"))
     
     print('CORRECTLY FINISHED TRAINING AND INFERENCE')
-
-
 
 
 if __name__ == '__main__':
