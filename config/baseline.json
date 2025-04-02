@@ -1,0 +1,18 @@
+{
+    "frame_dir": "/data-local/data1-ssd/axesparraguera/SoccerNetBallFrames224",
+    "save_dir": "/data-slow/guest/axesparraguera/CVMaster",
+    "labels_dir": "/data-net/datasets/SoccerNetv2/Spotting_Ball/spotting-ball-2024",
+    "store_mode": "load",
+    "task": "classification",
+    "batch_size": 4,
+    "clip_len": 50,
+    "dataset": "soccernetball",
+    "epoch_num_frames": 500000,
+    "feature_arch": "rny002",
+    "learning_rate": 0.0008,
+    "num_classes": 12,
+    "num_epochs": 35,
+    "warm_up_epochs": 3,
+    "only_test": false,
+    "num_workers": 4
+}
