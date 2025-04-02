@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-File containing the main training script for T-DEED.
+File containing the main training script.
 """
 
 #Standard imports
@@ -17,9 +17,9 @@ from tabulate import tabulate
 
 #Local imports
 from util.io import load_json, store_json
-from util.eval_classification import evaluate
+from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.model_classification import Model
+from model.model_spotting import Model
 
 
 def get_args():
@@ -155,7 +155,7 @@ def main(args):
     model.load(torch.load(os.path.join(ckpt_dir, 'checkpoint_best.pt')))
 
     # Evaluation on test split
-    ap_score = evaluate(model, test_data)
+    map_score, ap_score = evaluate(model, test_data, nms_window = 5)
 
     # Report results per-class in table
     table = []
@@ -166,7 +166,7 @@ def main(args):
     print(tabulate(table, headers, tablefmt="grid"))
 
     # Report average results in table
-    avg_table = [["Average", f"{np.mean(ap_score)*100:.2f}"]]
+    avg_table = [["Mean", f"{map_score*100:.2f}"]]
     headers = ["", "Average Precision"]
 
     print(tabulate(avg_table, headers, tablefmt="grid"))
