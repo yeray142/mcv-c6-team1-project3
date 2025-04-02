@@ -243,6 +243,37 @@ class FrameReader:
                 ret, (0, 0, 0, 0, 0, 0, pad_start, pad_end if pad else 0))            
 
         return ret
+    
+    def load_frames_test(self, video_name, start, end, pad=False, stride=1):
+        ret = []
+        n_pad_start = 0
+        n_pad_end = 0
+
+        for frame_num in range(start, end, stride):
+
+            if frame_num < 0:
+                n_pad_start += 1
+                continue
+
+            frame_path = os.path.join(self._frame_dir, video_name, 'frame' + str(frame_num) + '.jpg')
+                
+            try:
+                img = self.read_frame(frame_path)
+                ret.append(img)
+            except RuntimeError:
+                # print('Missing file!', frame_path)
+                n_pad_end += 1
+
+        if len(ret) == 0:
+            return -1 # Return -1 if no frames were loaded
+        
+        ret = torch.stack(ret, dim=int(len(ret[0].shape) == 4))
+
+        # Always pad start, but only pad end if requested
+        if n_pad_start > 0 or (pad and n_pad_end > 0):
+            ret = torch.nn.functional.pad(
+                ret, (0, 0, 0, 0, 0, 0, n_pad_start, n_pad_end if pad else 0))
+        return ret
 
     def print_info(self):
         num_frames = sum([x['num_frames'] for x in self._games])
@@ -255,3 +286,78 @@ def _print_info_helper(src_file, labels):
         num_frames = sum([x['num_frames'] for x in labels])
         print('{} : {} videos, {} frames'.format(
             src_file, len(labels), num_frames))
+
+class ActionSpotVideoDataset(Dataset):
+
+    def __init__(
+            self,
+            classes,
+            game_file,
+            frame_dir,
+            clip_len,
+            overlap=0,
+            stride=1,
+            pad_len=DEFAULT_PAD_LEN,
+            dataset = 'soccernetball',
+            labels_dir = None,
+            task = 'spotting'
+    ):
+        self._src_file = game_file
+        self._games = load_json(game_file)
+        self._class_dict = classes
+        self._video_idxs = {x['video']: i for i, x in enumerate(self._games)}
+        self._dataset = dataset
+        assert dataset == 'soccernetball'
+        self._clip_len = clip_len
+        assert clip_len > 0
+        self._stride = stride
+        assert stride > 0
+        assert overlap >= 0 and overlap <= 1
+        self._clip_sampling_step = 1 if overlap == 1 else int((1 - overlap) * clip_len * stride)
+        self._pad_len = pad_len
+        assert pad_len >= 0
+        self._labels_dir = labels_dir
+        self._task = task
+        assert task == 'spotting'
+
+        self._frame_reader = FrameReader(frame_dir, dataset = dataset)
+
+        self._clips = []
+        for l in self._games:
+            has_clip = False
+            for i in range(
+                -pad_len * self._stride,
+                max(0, int(l['num_frames'] - (self._clip_sampling_step * stride))), \
+                # Need to ensure that all clips have at least one frame
+                self._clip_sampling_step
+            ):
+                has_clip = True
+                self._clips.append((l['video'], i))
+            assert has_clip, l
+
+    def __len__(self):
+        return len(self._clips)
+
+    def __getitem__(self, idx):
+
+        video_name, start = self._clips[idx]
+
+        frames = self._frame_reader.load_frames_test(
+            video_name, start, start + self._clip_len * self._stride, pad=True,
+            stride=self._stride)
+
+        return {'video': video_name, 'start': start // self._stride,
+                'frame': frames}
+    
+    @property
+    def videos(self):
+        return sorted([
+            (v['video'], math.ceil(v['num_frames'] / self._stride),
+                FPS_SN / self._stride) for v in self._games])
+
+    def print_info(self):
+        num_frames = sum([x['num_frames'] for x in self._games])
+
+        print('{} : {} videos, {} frames ({} stride)'.format(
+            self._src_file, len(self._games), num_frames, self._stride)
+        )

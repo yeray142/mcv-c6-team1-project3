@@ -7,7 +7,7 @@ import os
 
 #Local imports
 from util.dataset import load_classes
-from dataset.frame import ActionSpotDataset
+from dataset.frame import ActionSpotDataset, ActionSpotVideoDataset
 
 #Constants
 DEFAULT_STRIDE = 2      # Sampling stride (if greater than 1, frames are skipped) / Effectively reduces FPS
@@ -38,10 +38,8 @@ def get_datasets(args):
 
     dataset_kwargs['overlap'] = 0
 
-    test_data = ActionSpotDataset(
-        classes, os.path.join('data', args.dataset, 'test.json'),
-        args.frame_dir, args.store_dir, args.store_mode, args.clip_len, None, pad_len = 0, **dataset_kwargs)
+    test_data = ActionSpotVideoDataset(classes, os.path.join('data', args.dataset, 'test.json'),
+        args.frame_dir, args.clip_len, **dataset_kwargs)
     test_data.print_info()
-
         
     return classes, train_data, val_data, test_data
