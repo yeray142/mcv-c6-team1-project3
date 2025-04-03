@@ -115,7 +115,7 @@ class Model(BaseRGBModel):
             optimizer.zero_grad()
             self._model.train()
 
-        weights = torch.tensor([1.0] + [5.0] * (self._num_classes), dtype=torch.float32)
+        weights = torch.tensor([1.0] + [5.0] * (self._num_classes), dtype=torch.float32).to(self.device)
 
         epoch_loss = 0.
         with torch.no_grad() if optimizer is None else nullcontext():
