@@ -47,9 +47,13 @@ class Model(BaseRGBModel):
             lstm_out_dim = self._features.blocks[5].proj.in_features * 2  # because of bidirectionality
             
             # Add attention layer for better temporal modeling
+            self.attention_heads = args.attention_heads if "attention_heads" in args else 4
+            print("Using attention heads:", self.attention_heads)
+            
+            # Attention layer
             self.attention_layer = nn.MultiheadAttention(
                 embed_dim=lstm_out_dim,  # Matches LSTM's output dimension
-                num_heads=4,            # 4 attention heads
+                num_heads=self.attention_heads,  # 4 attention heads
                 batch_first=True
             )
             

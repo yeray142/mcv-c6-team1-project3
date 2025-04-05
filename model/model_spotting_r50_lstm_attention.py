@@ -68,7 +68,7 @@ class Model(BaseRGBModel):
                 x = self.augment(x) #augmentation per-batch
             x = self.standarize(x) # Standarization Kinetics-400 stats
             
-            print(f"Shape before resnet50: {x.shape}") # Current shape is (B, C, T, H, W)
+            #print(f"Shape before resnet50: {x.shape}") # Current shape is (B, C, T, H, W)
 
             # The model expects input of shape (B*T, C, H, W) 
             im_feat = self._features(
@@ -78,13 +78,12 @@ class Model(BaseRGBModel):
             # Reshape to separate batch and temporal dimensions 
             im_feat = im_feat.reshape(batch_size, clip_len, self._d) # (B, T, C)
 
-            print(f"Shape after resnet50: {im_feat.shape}")
+            #print(f"Shape after resnet50: {im_feat.shape}")
 
             # Now x has shape (B, C, T', H', W')
             # Pooling spatial dimensions only, keeping temporal dimension
             #x = F.adaptive_avg_pool3d(x, (x.size(2), 1, 1))  # (B, C, T', 1, 1)
             #im_feat = im_feat.squeeze(-1).squeeze(-1)  # (B, C, T')
-            print(f"Shape after squeeze: {im_feat.shape}")
             
             # Rearrange to (B, T', C) for LSTM
             #im_feat = im_feat.permute(0, 2, 1)  # (B, T', C)
