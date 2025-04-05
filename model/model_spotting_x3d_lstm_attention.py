@@ -14,9 +14,7 @@ from contextlib import nullcontext
 from tqdm import tqdm
 import torch.nn.functional as F
 from torchvision.ops import sigmoid_focal_loss
-
-
-
+from fvcore.nn import FlopCountAnalysis, flop_count_table
 from torchvision.transforms import Compose, Lambda
 from torchvision.transforms._transforms_video import (
     CenterCropVideo,
@@ -144,6 +142,16 @@ class Model(BaseRGBModel):
             self.device = "cuda"
 
         self._model = Model.Impl(args=args)
+        
+        # Compute FLOPs of the model
+        B, T, C, H, W = 1, 50, 3, 224, 224  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
+        x = torch.randn(B, T, C, H, W)
+
+        # Count FLOPs
+        flops = FlopCountAnalysis(self._model, x)
+        print(flop_count_table(flops))
+        print(f"Total FLOPs: {flops.total()}")
+        
         self._model.print_stats()
         self._args = args
 
@@ -173,7 +181,7 @@ class Model(BaseRGBModel):
                     pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
                     label = label.view(-1) # B*T
                     loss = F.cross_entropy(
-                            pred, label, reduction='mean', weight = weights)
+                            pred, label, reduction='mean', weight = weights, label_smoothing=0.2)
 
                 if optimizer is not None:
                     step(optimizer, scaler, loss,
