@@ -11,3 +11,5 @@ job_*
 
 # Data folder
 data/
+jobs/
+.ipynb_checkpoints/

@@ -65,11 +65,11 @@ class Model(BaseRGBModel):
             # Replace 2D CNN with X3D (new code)
             if self._feature_arch.startswith('x3d_s'):
                 self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_s', pretrained=True)
-                feature_dim = 432 # TODO: check this value
+                feature_dim = 192 # TODO: check this value
             elif self._feature_arch.startswith('x3d_m'):
                 print("Using X3D (M version)")
                 self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_m', pretrained=True)
-                feature_dim = 576 # TODO: check this value
+                feature_dim = 192 # TODO: check this value
             
             # Get max sequence length from args or use default
             self.max_seq_length = getattr(args, 'clip_len', 50)
