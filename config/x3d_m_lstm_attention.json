@@ -1,6 +1,6 @@
 {
     "frame_dir": "/ghome/c5mcv01/mcv-c6-team1-project2/data/soccernetball/out/398x224",
-    "save_dir": "/ghome/c5mcv01/mcv-c6-team1-project3/data/soccernetball/SN-BAS-2025_savedata_baseline2",
+    "save_dir": "/ghome/c5mcv01/mcv-c6-team1-project3/data/soccernetball/SN-BAS-2025_x3dm",
     "labels_dir": "/ghome/c5mcv01/mcv-c6-team1-project2/data/soccernetball/SN-BAS-2025",
     "store_mode": "load",
     "task": "spotting",
@@ -9,7 +9,7 @@
     "stride": 2,
     "dataset": "soccernetball",
     "epoch_num_frames": 500000,
-    "feature_arch": "rny002",
+    "feature_arch": "x3d_m",
     "learning_rate": 0.0008,
     "num_classes": 12,
     "num_epochs": 20,

@@ -3,3 +3,11 @@
 __pycache__/
 *.pyc
 *.pyo
+
+# Logs from the server
+*.out
+*.err
+job_*
+
+# Data folder
+data/
