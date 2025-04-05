@@ -131,14 +131,14 @@ class Model(BaseRGBModel):
             # Rearrange to (B, T', C) for Transformer
             x = x.permute(0, 2, 1)  # (B, T', C)
             
-            # Pass through LSTM
-            x, _ = self._lstm(x)  # output shape: (B, T', 2*_d)
+            # Apply positional encoding
+            x = self.positional_encoding(x)  # (B, T', C)
             
-            # Apply attention
-            attn_out, _ = self.attention_layer(x, x, x)
+            # Apply transformer encoder
+            x = self.transformer_encoder(x)  # (B, T', C)
 
             # Final classification
-            x = self._fc(attn_out)  # (B, T', num_classes+1)
+            x = self._fc(x)  # (B, T', num_classes+1)
             return x
         
         def normalize(self, x):
