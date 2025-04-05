@@ -18,8 +18,7 @@
     "device": "cuda",
     "num_workers": 4,
 
-    "transformer_layers": 2,
+    "transformer_layers": 1,
     "transformer_dims": 2048,
-    "transformer_heads": 8,
-    "use_learnable_pe": false
+    "transformer_heads": 8
 }

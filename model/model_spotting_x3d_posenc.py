@@ -74,6 +74,14 @@ class Model(BaseRGBModel):
             # Get max sequence length from args or use default
             self.max_seq_length = getattr(args, 'clip_len', 50)
             print("Max sequence length:", self.max_seq_length)
+            self.transformer_layers = args.transformer_layers if "transformer_layers" in args else 2
+            print("Transformers layers:", self.transformer_layers)
+            self.transformer_dims = args.transformer_dims if "transformer_dims" in args else 2048
+            print("Transformers FF dims:", self.transformer_dims)
+            self.transformer_heads = args.transformer_heads if "transformer_heads" in args else 8
+            print("Transformers FF dims:", self.transformer_heads)
+            self.use_learnable_pe = args.use_learnable_pe if "use_learnable_pe" in args else False
+            print("Enhanced positional encoding:", self.use_learnable_pe)
             
             # Positional encoding
             self.positional_encoding = PositionalEncoding(
@@ -81,19 +89,21 @@ class Model(BaseRGBModel):
                 max_len=self.max_seq_length,
                 dropout=0.1
             )
+            if self.use_learnable_pe:
+                self.positional_encoding = nn.Embedding(self.max_seq_length, feature_dim)
             
             # Transformer encoder layer for temporal modeling (replacing LSTM)
             encoder_layer = nn.TransformerEncoderLayer(
                 d_model=feature_dim,
-                nhead=8, # TODO: check this value
-                dim_feedforward=2048, # TODO: check this value
+                nhead=self.transformer_heads, # TODO: check this value
+                dim_feedforward=self.transformer_dims, # TODO: check this value
                 dropout=0.1,
                 activation=F.gelu,
                 batch_first=True
             )
             self.transformer_encoder = nn.TransformerEncoder(
                 encoder_layer=encoder_layer,
-                num_layers=2 # TODO: check this value
+                num_layers=self.transformer_layers # TODO: check this value
             )
             
             # Final classification layer
@@ -132,7 +142,18 @@ class Model(BaseRGBModel):
             x = x.permute(0, 2, 1)  # (B, T', C)
             
             # Apply positional encoding
-            x = self.positional_encoding(x)  # (B, T', C)
+            if self.use_learnable_pe:
+                # Generate position indices for current sequence length
+                positions = torch.arange(
+                    x.size(1), 
+                    dtype=torch.long, 
+                    device=x.device
+                ).unsqueeze(0).expand(x.size(0), -1)  # Shape: (B, T')
+
+                # Positional encoding
+                x = x + self.positional_encoding(positions)
+            else:
+                x = self.positional_encoding(x)  # (B, T', C)
             
             # Apply transformer encoder
             x = self.transformer_encoder(x)  # (B, T', C)

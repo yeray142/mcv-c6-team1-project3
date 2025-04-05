@@ -50,6 +50,12 @@ def update_args(args, config):
     args.device = config['device']
     args.num_workers = config['num_workers']
 
+    # Set optional parameters for transformers
+    args.transformer_layers = config['transformer_layers'] if 'transformer_layers' in config else 2
+    args.transformer_dims = config['transformer_dims'] if 'transformer_dims' in config else 2048
+    args.transformer_heads = config['transformer_heads'] if 'transformer_heads' in config else 8
+    args.use_learnable_pe = config['use_learnable_pe'] if 'use_learnable_pe' in config else False
+
     return args
 
 def get_lr_scheduler(args, optimizer, num_steps_per_epoch):
