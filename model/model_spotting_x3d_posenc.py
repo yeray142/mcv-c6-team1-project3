@@ -7,8 +7,8 @@ File containing the main model.
 
 #Standard imports
 import torch
+import math
 from torch import nn
-import torchvision
 import torchvision.transforms as T
 from contextlib import nullcontext
 from tqdm import tqdm
@@ -27,6 +27,35 @@ from torchvision.transforms._transforms_video import (
 #Local imports
 from model.modules import BaseRGBModel, FCLayers, step
 
+
+class PositionalEncoding(nn.Module):
+    """
+    Positional encoding for transformer models to provide temporal information
+    """
+    def __init__(self, d_model, max_len=64, dropout=0.1):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        # Create positional encoding matrix
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # Shape: (1, max_len, d_model)
+        
+        # Register buffer (persistent state)
+        self.register_buffer('pe', pe)
+        
+    def forward(self, x):
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embedding_dim]
+        """
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
 class Model(BaseRGBModel):
     class Impl(nn.Module):
         def __init__(self, args = None):
@@ -34,30 +63,46 @@ class Model(BaseRGBModel):
             self._feature_arch = args.feature_arch
 
             # Replace 2D CNN with X3D (new code)
-            if self._feature_arch.startswith('resnet50'):
-                print("(Model) ResNet50")
-                self._features = torchvision.models.resnet50(pretrained=True)
-            self._d = 512
-            print(f"ResNet50: {self._features}")
-            self._features.fc = nn.Linear(self._features.fc.in_features, self._d)
-            # Add LSTM for temporal processing (similar to the second model)
-            self._lstm = nn.LSTM(input_size=self._d, hidden_size=self._d, 
-                                batch_first=True, num_layers=1, bidirectional=True)
-            lstm_out_dim = self._d * 2  # because of bidirectionality
+            if self._feature_arch.startswith('x3d_s'):
+                self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_s', pretrained=True)
+                feature_dim = 432 # TODO: check this value
+            elif self._feature_arch.startswith('x3d_m'):
+                print("Using X3D (M version)")
+                self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_m', pretrained=True)
+                feature_dim = 576 # TODO: check this value
             
-            # Add attention layer for better temporal modeling
-            self.attention_layer = nn.MultiheadAttention(
-                embed_dim=lstm_out_dim,  # Matches LSTM's output dimension
-                num_heads=4,            # 4 attention heads
-                batch_first=True
+            # Get max sequence length from args or use default
+            self.max_seq_length = getattr(args, 'clip_len', 50)
+            print("Max sequence length:", self.max_seq_length)
+            
+            # Positional encoding
+            self.positional_encoding = PositionalEncoding(
+                d_model=feature_dim,
+                max_len=self.max_seq_length,
+                dropout=0.1
             )
             
-            self._fc = FCLayers(lstm_out_dim, args.num_classes+1)
+            # Transformer encoder layer for temporal modeling (replacing LSTM)
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=feature_dim,
+                nhead=8, # TODO: check this value
+                dim_feedforward=2048, # TODO: check this value
+                dropout=0.1,
+                activation=F.gelu,
+                batch_first=True
+            )
+            self.transformer_encoder = nn.TransformerEncoder(
+                encoder_layer=encoder_layer,
+                num_layers=2 # TODO: check this value
+            )
+            
+            # Final classification layer
+            self._fc = FCLayers(feature_dim, args.num_classes+1)
 
             # Update normalization for video models (critical change)
             self.standarization = T.Compose([
-                T.Normalize(mean = (0.485, 0.456, 0.406), 
-                            std = (0.229, 0.224, 0.225)) # Kinetics-400 stats
+                T.Normalize(mean = (0.45, 0.45, 0.45), 
+                            std = (0.225, 0.225, 0.225)) # Kinetics-400 stats
             ])
 
         def forward(self, x):
@@ -68,29 +113,26 @@ class Model(BaseRGBModel):
                 x = self.augment(x) #augmentation per-batch
             x = self.standarize(x) # Standarization Kinetics-400 stats
             
-            print(f"Shape before resnet50: {x.shape}") # Current shape is (B, C, T, H, W)
-
-            # The model expects input of shape (B*T, C, H, W) 
-            im_feat = self._features(
-                x.view(-1, channels, height, width)
-            ) #B*T, D
-
-            # Reshape to separate batch and temporal dimensions 
-            im_feat = im_feat.reshape(batch_size, clip_len, self._d) # (B, T, C)
-
-            print(f"Shape after resnet50: {im_feat.shape}")
-
+            # Reformat input for 3D CNN: (B,T,C,H,W) -> (B,C,T,H,W)
+            x = x.permute(0, 2, 1, 3, 4)
+            
+            # Pass through X3D model
+            # The X3D model expects input of shape (B, C, T, H, W)
+            for i, block in enumerate(self._features.blocks):
+                if i == 5:
+                    break # Skip ResNet projection head
+                x = block(x)
+            
             # Now x has shape (B, C, T', H', W')
             # Pooling spatial dimensions only, keeping temporal dimension
-            #x = F.adaptive_avg_pool3d(x, (x.size(2), 1, 1))  # (B, C, T', 1, 1)
-            #im_feat = im_feat.squeeze(-1).squeeze(-1)  # (B, C, T')
-            print(f"Shape after squeeze: {im_feat.shape}")
+            x = F.adaptive_avg_pool3d(x, (x.size(2), 1, 1))  # (B, C, T', 1, 1)
+            x = x.squeeze(-1).squeeze(-1)  # (B, C, T')
             
-            # Rearrange to (B, T', C) for LSTM
-            #im_feat = im_feat.permute(0, 2, 1)  # (B, T', C)
+            # Rearrange to (B, T', C) for Transformer
+            x = x.permute(0, 2, 1)  # (B, T', C)
             
             # Pass through LSTM
-            x, _ = self._lstm(im_feat)  # output shape: (B, T', 2*_d)
+            x, _ = self._lstm(x)  # output shape: (B, T', 2*_d)
             
             # Apply attention
             attn_out, _ = self.attention_layer(x, x, x)
