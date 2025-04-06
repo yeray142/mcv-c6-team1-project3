@@ -1,8 +1,8 @@
 {
-    "frame_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/frames/398x224",
+    "frame_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/frames/597x336",
     "save_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/SN-BAS-2025_x3dm",
     "labels_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data",
-    "store_mode": "load",
+    "store_mode": "store",
     "task": "spotting",
     "batch_size": 4,
     "clip_len": 50,
@@ -18,8 +18,7 @@
     "device": "cuda",
     "num_workers": 4,
 
-    "transformer_layers": 2,
+    "transformer_layers": 1,
     "transformer_dims": 2048,
-    "transformer_heads": 8,
-    "use_learnable_pe": true
+    "transformer_heads": 12
 }

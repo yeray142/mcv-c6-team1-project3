@@ -14,11 +14,11 @@
     "num_classes": 12,
     "num_epochs": 20,
     "warm_up_epochs": 3,
-    "only_test": true,
+    "only_test": false,
     "device": "cuda",
     "num_workers": 4,
 
-    "transformer_layers": 2,
+    "transformer_layers": 1,
     "transformer_dims": 2048,
     "transformer_heads": 8,
     "use_learnable_pe": true

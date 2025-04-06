@@ -19,7 +19,7 @@ from tabulate import tabulate
 from util.io import load_json, store_json
 from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.model_spotting_x3d_lstm_attention import Model
+from model.model_spotting_x3d_posenc import Model
 
 
 def get_args():
