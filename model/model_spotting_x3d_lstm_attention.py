@@ -20,7 +20,7 @@ from torchvision.transforms._transforms_video import (
     CenterCropVideo,
     NormalizeVideo,
 )
-
+from kornia.losses import focal_loss
 
 #Local imports
 from model.modules import BaseRGBModel, FCLayers, step
@@ -151,12 +151,12 @@ class Model(BaseRGBModel):
         flops = FlopCountAnalysis(self._model, x)
         print(flop_count_table(flops))
         print(f"Total FLOPs: {flops.total()}")
-        
         self._model.print_stats()
         self._args = args
 
         self._model.to(self.device)
         self._num_classes = args.num_classes
+        
 
     def epoch(self, loader, optimizer=None, scaler=None, lr_scheduler=None):
 
@@ -180,8 +180,23 @@ class Model(BaseRGBModel):
                     pred = self._model(frame)
                     pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
                     label = label.view(-1) # B*T
-                    loss = F.cross_entropy(
-                            pred, label, reduction='mean', weight = weights, label_smoothing=0.2)
+                    
+                    assert self._args.loss in ['ce', 'focal'], "Loss function must be 'ce' or 'focal'"
+                    if self._args.loss == 'focal':
+                        assert self._args.alpha is not None, "Alpha must be set for focal loss"
+                        assert self._args.gamma is not None, "Gamma must be set for focal loss"
+                        loss = focal_loss(
+                            pred,                      # Shape: [B*T, num_classes]
+                            label,                     # Shape: [B*T]
+                            alpha=self._args.alpha,
+                            gamma=self._args.gamma,
+                            reduction='mean',          # Or 'sum'/'none' depending on your use
+                            weight=weights,            # Optional class weighting tensor
+                            ignore_index=-100          # Or your own ignore index if needed
+                        )
+                    elif self._args.loss == 'ce':
+                        loss = F.cross_entropy(
+                            pred, label, reduction='mean', weight = weights)
 
                 if optimizer is not None:
                     step(optimizer, scaler, loss,

@@ -82,14 +82,12 @@ class Model(BaseRGBModel):
             print("Transformers FF dims:", self.transformer_heads)
             self.use_learnable_pe = args.use_learnable_pe if "use_learnable_pe" in args else False
             print("Enhanced positional encoding:", self.use_learnable_pe)
-            self.dropout = args.dropout if "dropout" in args else 0.1
-            print("Dropout:", self.dropout)
             
             # Positional encoding
             self.positional_encoding = PositionalEncoding(
                 d_model=feature_dim,
                 max_len=self.max_seq_length,
-                dropout=self.dropout
+                dropout=0.1
             )
             if self.use_learnable_pe:
                 self.positional_encoding = nn.Embedding(self.max_seq_length, feature_dim)
@@ -99,7 +97,7 @@ class Model(BaseRGBModel):
                 d_model=feature_dim,
                 nhead=self.transformer_heads, # TODO: check this value
                 dim_feedforward=self.transformer_dims, # TODO: check this value
-                dropout=self.dropout,
+                dropout=0.1,
                 activation=F.gelu,
                 batch_first=True
             )
@@ -188,8 +186,8 @@ class Model(BaseRGBModel):
                 x[b] = T.functional.adjust_hue(x[b], jitter_params[b,3] * 0.1 - 0.05)  # -0.05-0.05
                 
                 # Gaussian blur (same for all frames)
-                if torch.rand(1) < 0.25:
-                    x[b] = T.functional.gaussian_blur(x[b], kernel_size=5)
+                #if torch.rand(1) < 0.25:
+                    #x[b] = T.functional.gaussian_blur(x[b], kernel_size=5)
             return x
 
         def standarize(self, x):

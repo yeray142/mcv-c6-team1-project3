@@ -7,54 +7,23 @@ File containing the main model.
 
 #Standard imports
 import torch
-import math
 from torch import nn
+import torchvision
 import torchvision.transforms as T
 from contextlib import nullcontext
 from tqdm import tqdm
 import torch.nn.functional as F
 from torchvision.ops import sigmoid_focal_loss
 from fvcore.nn import FlopCountAnalysis, flop_count_table
-
-
 from torchvision.transforms import Compose, Lambda
 from torchvision.transforms._transforms_video import (
     CenterCropVideo,
     NormalizeVideo,
 )
-
+from kornia.losses import focal_loss
 
 #Local imports
 from model.modules import BaseRGBModel, FCLayers, step
-
-
-class PositionalEncoding(nn.Module):
-    """
-    Positional encoding for transformer models to provide temporal information
-    """
-    def __init__(self, d_model, max_len=64, dropout=0.1):
-        super().__init__()
-        self.dropout = nn.Dropout(p=dropout)
-        
-        # Create positional encoding matrix
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)  # Shape: (1, max_len, d_model)
-        
-        # Register buffer (persistent state)
-        self.register_buffer('pe', pe)
-        
-    def forward(self, x):
-        """
-        Args:
-            x: Tensor, shape [batch_size, seq_len, embedding_dim]
-        """
-        x = x + self.pe[:, :x.size(1), :]
-        return self.dropout(x)
 
 class Model(BaseRGBModel):
     class Impl(nn.Module):
@@ -65,51 +34,28 @@ class Model(BaseRGBModel):
             # Replace 2D CNN with X3D (new code)
             if self._feature_arch.startswith('x3d_s'):
                 self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_s', pretrained=True)
-                feature_dim = 192 # TODO: check this value
             elif self._feature_arch.startswith('x3d_m'):
                 print("Using X3D (M version)")
                 self._features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_m', pretrained=True)
-                feature_dim = 192 # TODO: check this value
+                
+
+            # Add LSTM for temporal processing (similar to the second model)
+            self._lstm = nn.LSTM(input_size=192, hidden_size=self._features.blocks[5].proj.in_features, 
+                                batch_first=True, num_layers=2, bidirectional=True)
+            lstm_out_dim = self._features.blocks[5].proj.in_features * 2  # because of bidirectionality
             
-            # Get max sequence length from args or use default
-            self.max_seq_length = getattr(args, 'clip_len', 50)
-            print("Max sequence length:", self.max_seq_length)
-            self.transformer_layers = args.transformer_layers if "transformer_layers" in args else 2
-            print("Transformers layers:", self.transformer_layers)
-            self.transformer_dims = args.transformer_dims if "transformer_dims" in args else 2048
-            print("Transformers FF dims:", self.transformer_dims)
-            self.transformer_heads = args.transformer_heads if "transformer_heads" in args else 8
-            print("Transformers FF dims:", self.transformer_heads)
-            self.use_learnable_pe = args.use_learnable_pe if "use_learnable_pe" in args else False
-            print("Enhanced positional encoding:", self.use_learnable_pe)
-            self.dropout = args.dropout if "dropout" in args else 0.1
-            print("Dropout:", self.dropout)
+            # Add attention layer for better temporal modeling
+            self.attention_heads = args.attention_heads if "attention_heads" in args else 4
+            print("Using attention heads:", self.attention_heads)
             
-            # Positional encoding
-            self.positional_encoding = PositionalEncoding(
-                d_model=feature_dim,
-                max_len=self.max_seq_length,
-                dropout=self.dropout
-            )
-            if self.use_learnable_pe:
-                self.positional_encoding = nn.Embedding(self.max_seq_length, feature_dim)
-            
-            # Transformer encoder layer for temporal modeling (replacing LSTM)
-            encoder_layer = nn.TransformerEncoderLayer(
-                d_model=feature_dim,
-                nhead=self.transformer_heads, # TODO: check this value
-                dim_feedforward=self.transformer_dims, # TODO: check this value
-                dropout=self.dropout,
-                activation=F.gelu,
+            # Attention layer
+            self.attention_layer = nn.MultiheadAttention(
+                embed_dim=lstm_out_dim,  # Matches LSTM's output dimension
+                num_heads=2,  # 2 attention heads
                 batch_first=True
             )
-            self.transformer_encoder = nn.TransformerEncoder(
-                encoder_layer=encoder_layer,
-                num_layers=self.transformer_layers # TODO: check this value
-            )
             
-            # Final classification layer
-            self._fc = FCLayers(feature_dim, args.num_classes+1)
+            self._fc = FCLayers(lstm_out_dim, args.num_classes+1)
 
             # Update normalization for video models (critical change)
             self.standarization = T.Compose([
@@ -140,28 +86,17 @@ class Model(BaseRGBModel):
             x = F.adaptive_avg_pool3d(x, (x.size(2), 1, 1))  # (B, C, T', 1, 1)
             x = x.squeeze(-1).squeeze(-1)  # (B, C, T')
             
-            # Rearrange to (B, T', C) for Transformer
+            # Rearrange to (B, T', C) for LSTM
             x = x.permute(0, 2, 1)  # (B, T', C)
             
-            # Apply positional encoding
-            if self.use_learnable_pe:
-                # Generate position indices for current sequence length
-                positions = torch.arange(
-                    x.size(1), 
-                    dtype=torch.long, 
-                    device=x.device
-                ).unsqueeze(0).expand(x.size(0), -1)  # Shape: (B, T')
-
-                # Positional encoding
-                x = x + self.positional_encoding(positions)
-            else:
-                x = self.positional_encoding(x)  # (B, T', C)
+            # Pass through LSTM
+            x, _ = self._lstm(x)  # output shape: (B, T', 2*_d)
             
-            # Apply transformer encoder
-            x = self.transformer_encoder(x)  # (B, T', C)
+            # Apply attention
+            attn_out, _ = self.attention_layer(x, x, x)
 
             # Final classification
-            x = self._fc(x)  # (B, T', num_classes+1)
+            x = self._fc(attn_out)  # (B, T', num_classes+1)
             return x
         
         def normalize(self, x):
@@ -207,7 +142,7 @@ class Model(BaseRGBModel):
             self.device = "cuda"
 
         self._model = Model.Impl(args=args)
-
+        
         # Compute FLOPs of the model
         B, T, C, H, W = 1, 50, 3, 224, 224  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
         x = torch.randn(B, T, C, H, W)
@@ -216,12 +151,12 @@ class Model(BaseRGBModel):
         flops = FlopCountAnalysis(self._model, x)
         print(flop_count_table(flops))
         print(f"Total FLOPs: {flops.total()}")
-        
         self._model.print_stats()
         self._args = args
 
         self._model.to(self.device)
         self._num_classes = args.num_classes
+        
 
     def epoch(self, loader, optimizer=None, scaler=None, lr_scheduler=None):
 
@@ -245,7 +180,23 @@ class Model(BaseRGBModel):
                     pred = self._model(frame)
                     pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
                     label = label.view(-1) # B*T
-                    loss = F.cross_entropy(
+                    
+                    #assert self._args.loss in ['ce', 'focal'], "Loss function must be 'ce' or 'focal'"
+                    loss = "ce"
+                    if loss == 'focal':
+                        assert self._args.alpha is not None, "Alpha must be set for focal loss"
+                        assert self._args.gamma is not None, "Gamma must be set for focal loss"
+                        loss = focal_loss(
+                            pred,                      # Shape: [B*T, num_classes]
+                            label,                     # Shape: [B*T]
+                            alpha=self._args.alpha,
+                            gamma=self._args.gamma,
+                            reduction='mean',          # Or 'sum'/'none' depending on your use
+                            weight=weights,            # Optional class weighting tensor
+                            ignore_index=-100          # Or your own ignore index if needed
+                        )
+                    elif loss == 'ce':
+                        loss = F.cross_entropy(
                             pred, label, reduction='mean', weight = weights)
 
                 if optimizer is not None:

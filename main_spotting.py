@@ -19,7 +19,7 @@ from tabulate import tabulate
 from util.io import load_json, store_json
 from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.model_spotting_x3d_posenc import Model
+from model.model_spotting_x3d_posenc_augmentations import Model
 
 
 def get_args():
@@ -55,6 +55,7 @@ def update_args(args, config):
     args.transformer_dims = config['transformer_dims'] if 'transformer_dims' in config else 2048
     args.transformer_heads = config['transformer_heads'] if 'transformer_heads' in config else 8
     args.use_learnable_pe = config['use_learnable_pe'] if 'use_learnable_pe' in config else False
+    args.dropout = config['dropout'] if 'dropout' in config else 0.1
 
     return args
 
