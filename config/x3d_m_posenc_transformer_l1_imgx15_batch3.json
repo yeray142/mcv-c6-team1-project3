@@ -22,5 +22,5 @@
 
     "transformer_layers": 1,
     "transformer_dims": 2048,
-    "transformer_heads": 12
+    "transformer_heads": 8
 }

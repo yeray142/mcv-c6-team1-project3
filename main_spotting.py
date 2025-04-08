@@ -19,7 +19,7 @@ from tabulate import tabulate
 from util.io import load_json, store_json
 from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.model_spotting_x3d_posenc_augmentations import Model
+from model.model_spotting_x3d_posenc import Model
 
 
 def get_args():
@@ -49,6 +49,7 @@ def update_args(args, config):
     args.only_test = config['only_test']
     args.device = config['device']
     args.num_workers = config['num_workers']
+    args.stride = config['stride']
 
     # Set optional parameters for transformers
     args.transformer_layers = config['transformer_layers'] if 'transformer_layers' in config else 2

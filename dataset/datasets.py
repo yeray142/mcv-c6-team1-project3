@@ -18,6 +18,7 @@ def get_datasets(args):
 
     dataset_len = args.epoch_num_frames // args.clip_len
     stride = args.stride if "stride" in args else DEFAULT_STRIDE
+    print('Stride:', stride)
     overlap = args.overlap if "overlap" in args else DEFAULT_OVERLAP
 
     dataset_kwargs = {
