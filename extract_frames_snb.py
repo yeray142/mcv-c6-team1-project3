@@ -20,8 +20,8 @@ python extract_frames_snb.py --video_dir video_dir
 # Constants
 FRAME_RETRY_THRESHOLD = 1000
 DEFAULT_SAMPLE_FPS = 25
-DEFAULT_HEIGHT = 224
-DEFAULT_WIDTH = 398
+DEFAULT_HEIGHT = 448 #224
+DEFAULT_WIDTH = 796 #398
 
 
 def get_args():
@@ -32,6 +32,7 @@ def get_args():
     parser.add_argument('--sample_fps', type=int, default=DEFAULT_SAMPLE_FPS)
     parser.add_argument('--height', type=int, default=DEFAULT_HEIGHT)
     parser.add_argument('--width', type=int, default=DEFAULT_WIDTH)
+    parser.add_argument('--gray', action='store_true')
     parser.add_argument('--recalc_fps', action='store_true') # Debug option
     parser.add_argument('-j', '--num_workers', type=int,
                         default=os.cpu_count() // 4)
@@ -44,7 +45,7 @@ def get_duration(video_path):
 
 
 def worker(args):
-    video_name, video_path, out_dir, width, height, sample_fps, recalc_fps = args
+    video_name, video_path, out_dir, width, height, gray, sample_fps, recalc_fps = args
 
     def get_stride(src_fps):
         if sample_fps <= 0:
@@ -113,6 +114,8 @@ def worker(args):
                 if not recalc_fps:
                     if frame.shape[0] != oh or frame.shape[1] != ow:
                         frame = cv2.resize(frame, (ow, oh))
+                        if gray:
+                            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     if out_dir is not None:
                         frame_path = os.path.join(out_dir, 'frame{}.jpg'.format(i))
                         cv2.imwrite(frame_path, frame)
@@ -131,6 +134,7 @@ def main(args):
     out_dir = args.out_dir
     width = args.width
     height = args.height
+    gray = args.gray
     sample_fps = args.sample_fps
     recalc_fps = args.recalc_fps
     num_workers = args.num_workers
@@ -159,6 +163,7 @@ def main(args):
                             os.path.join(out_dir, league, season, game) if out_dir else None,
                             width,
                             height,
+                            gray,
                             sample_fps,
                             recalc_fps
                         ))

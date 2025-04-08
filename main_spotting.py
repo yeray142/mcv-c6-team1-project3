@@ -49,8 +49,10 @@ def update_args(args, config):
     args.only_test = config['only_test']
     args.device = config['device']
     args.num_workers = config['num_workers']
+    args.attention_heads = config['attention_heads'] if 'attention_heads' in config else 4
+    args.loss = config['loss'] if 'loss' in config else "ce"
     args.stride = config['stride']
-
+    
     # Set optional parameters for transformers
     args.transformer_layers = config['transformer_layers'] if 'transformer_layers' in config else 2
     args.transformer_dims = config['transformer_dims'] if 'transformer_dims' in config else 2048
@@ -119,6 +121,11 @@ def main(args):
     optimizer, scaler = model.get_optimizer({'lr': args.learning_rate})
 
     if not args.only_test:
+        # If there is a checkpoint, load it
+        if os.path.exists(os.path.join(ckpt_dir, 'checkpoint_best.pt')):
+            print('Loading checkpoint from: ', os.path.join(ckpt_dir, 'checkpoint_best.pt'))
+            model.load(torch.load(os.path.join(ckpt_dir, 'checkpoint_best.pt')))
+        
         # Warmup schedule
         num_steps_per_epoch = len(train_loader)
         num_epochs, lr_scheduler = get_lr_scheduler(
