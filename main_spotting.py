@@ -19,7 +19,7 @@ from tabulate import tabulate
 from util.io import load_json, store_json
 from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.model_spotting_x3d_posenc_gray import Model
+from model.w7.model_spotting_tdeed import Model
 
 
 def get_args():
@@ -59,6 +59,14 @@ def update_args(args, config):
     args.transformer_heads = config['transformer_heads'] if 'transformer_heads' in config else 8
     args.use_learnable_pe = config['use_learnable_pe'] if 'use_learnable_pe' in config else False
     args.dropout = config['dropout'] if 'dropout' in config else 0.1
+    
+    args.use_gray = config['use_gray'] if 'use_gray' in config else False
+    args.temporal_arch = config['temporal_arch'] if 'temporal_arch' in config else 'ed_sgp_mixer'
+    args.sgp_ks = config['sgp_ks'] if 'sgp_ks' in config else 9
+    args.sgp_r = config['sgp_r'] if 'sgp_r' in config else 4
+    args.crop_dim = config['crop_dim'] if 'crop_dim' in config else 224
+    args.radi_displacement = config['radi_displacement'] if 'radi_displacement' in config else 0.0
+    args.n_layers = config['n_layers'] if 'n_layers' in config else 1
 
     return args
 
