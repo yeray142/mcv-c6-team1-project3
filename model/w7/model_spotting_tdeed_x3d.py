@@ -8,13 +8,14 @@ import math
 import timm
 import torchvision.transforms as T
 import torch.nn.functional as F
+from fvcore.nn import FlopCountAnalysis, flop_count_table
 from contextlib import nullcontext
 from tqdm import tqdm
 from torch import nn
 
 
 #Local imports
-from model.modules import BaseRGBModel, FCLayers, step, EDSGPMIXERLayers
+from model.modules import BaseRGBModel, FCLayers, step, EDSGPMIXERLayers, process_prediction
 from model.w7.shift import make_temporal_shift
 
 
@@ -189,6 +190,16 @@ class Model(BaseRGBModel):
             self.device = "cuda"
 
         self._model = Model.Impl(args=args)
+
+        # Compute FLOPs of the model
+        B, T, C, H, W = 1, args.clip_len, 3, 224, 398  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
+        x = torch.randn(B, T, C, H, W)
+
+        # Count FLOPs
+        flops = FlopCountAnalysis(self._model, x)
+        print(flop_count_table(flops))
+        print(f"Total FLOPs: {flops.total()}")
+        
         self._model.print_stats()
         self._args = args
 
@@ -209,17 +220,31 @@ class Model(BaseRGBModel):
 
         epoch_loss = 0.
         with torch.no_grad() if optimizer is None else nullcontext():
-            for batch_idx, batch in enumerate(tqdm(loader)):
+            for _, batch in enumerate(tqdm(loader)):
                 frame = batch['frame'].to(self.device).float()
                 label = batch['label']
                 label = label.to(self.device).long()
+                
+                if 'labelD' in batch.keys():
+                    labelD = batch['labelD'].to(self.device).float()
 
                 with torch.cuda.amp.autocast():
                     pred = self._model(frame)
+                    
+                    # If Radi displacement is used, we need to get the displacement prediction
+                    if 'labelD' in batch.keys():
+                        predD = pred['displ_feat']
+                        pred = pred['im_feat']
+                    
                     pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
                     label = label.view(-1) # B*T
                     loss = F.cross_entropy(
                             pred, label, reduction='mean', weight = weights)
+                    
+                    if 'labelD' in batch.keys():
+                        lossD = F.mse_loss(predD, labelD, reduction = 'none')
+                        lossD = (lossD).mean()
+                        loss = loss + lossD
 
                 if optimizer is not None:
                     step(optimizer, scaler, loss,
@@ -245,6 +270,20 @@ class Model(BaseRGBModel):
                 pred = self._model(seq)
 
             # apply sigmoid
-            pred = torch.softmax(pred, dim=-1)
+            if isinstance(pred, dict):
+                predD = pred['displ_feat']
+                pred = pred['im_feat']
+                if isinstance(pred, list):
+                    pred = pred[0]
+                if isinstance(predD, list):
+                    predD = predD[0]
+                if self._model._double_head:
+                    raise NotImplementedError('Double head not implemented')
+                    # pred = process_double_head(pred, predD, num_classes = self._args.num_classes+1)
+                else:
+                    pred = process_prediction(pred, predD)
+                return pred.cpu().numpy()
+            else:
+                pred = torch.softmax(pred, dim=-1)
             
             return pred.cpu().numpy()

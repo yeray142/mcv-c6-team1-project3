@@ -8,6 +8,7 @@ import math
 import timm
 import torchvision.transforms as T
 import torch.nn.functional as F
+from fvcore.nn import FlopCountAnalysis, flop_count_table
 from contextlib import nullcontext
 from tqdm import tqdm
 from torch import nn
@@ -188,6 +189,16 @@ class Model(BaseRGBModel):
             self.device = "cuda"
 
         self._model = Model.Impl(args=args)
+
+        # Compute FLOPs of the model
+        B, T, C, H, W = 1, args.clip_len, 3, 224, 398  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
+        x = torch.randn(B, T, C, H, W)
+
+        # Count FLOPs
+        flops = FlopCountAnalysis(self._model, x)
+        print(flop_count_table(flops))
+        print(f"Total FLOPs: {flops.total()}")
+        
         self._model.print_stats()
         self._args = args
 
