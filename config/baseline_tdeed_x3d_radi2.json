@@ -1,30 +1,30 @@
 {
     "frame_dir": "/ghome/c5mcv01/mcv-c6-team1-project2/data/soccernetball/out/398x224",
-    "save_dir": "/ghome/c5mcv01/mcv-c6-team1-project3/data/soccernetball/SN-BAS-2025_savedata_tdeed_radi4_clip100",
+    "save_dir": "/ghome/c5mcv01/mcv-c6-team1-project3/data/soccernetball/SN-BAS-2025_savedata_baseline_x3d_radi2",
     "labels_dir": "/ghome/c5mcv01/mcv-c6-team1-project2/data/soccernetball/SN-BAS-2025",
     "store_mode": "load",
     "task": "spotting",
 
-    "batch_size": 2,
-    "clip_len": 100,
+    "batch_size": 4,
+    "clip_len": 50,
     "stride": 2,
     "dataset": "soccernetball",
     "epoch_num_frames": 500000,
-    "feature_arch": "rny002_gsf",
+    "feature_arch": "x3d_m",
     "learning_rate": 0.0008,
     "num_classes": 12,
-    "num_epochs": 1,
+    "num_epochs": 20,
     "warm_up_epochs": 3,
 
     "only_test": false,
     "device": "cuda",
-    "num_workers": 8,
+    "num_workers": 4,
 
     "use_gray": false,
     "temporal_arch": "ed_sgp_mixer",
     "sgp_ks": 9,
     "sgp_r": 4,
     "crop_dim": -1,
-    "radi_displacement": 4,
+    "radi_displacement": 2,
     "n_layers": 2
 }

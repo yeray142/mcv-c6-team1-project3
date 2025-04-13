@@ -19,7 +19,7 @@ from tabulate import tabulate
 from util.io import load_json, store_json
 from util.eval_spotting import evaluate
 from dataset.datasets import get_datasets
-from model.w7.model_spotting_tdeed import Model
+from model.w7.model_spotting_tdeed_x3d import Model
 
 
 def get_args():

@@ -111,7 +111,8 @@ class Model(BaseRGBModel):
 
             # Standarization
             self.standarization = T.Compose([
-                T.Normalize(mean = (0.485, 0.456, 0.406), std = (0.229, 0.224, 0.225)) #Imagenet mean and std
+                T.Normalize(mean = (0.45, 0.45, 0.45), 
+                            std = (0.225, 0.225, 0.225)) # Kinetics-400 stats
             ])
             
             # Croping in case of using it
