@@ -220,7 +220,7 @@ class Model(BaseRGBModel):
         self._model = Model.Impl(args=args)
 
         # Compute FLOPs of the model
-        B, T, C, H, W = 1, args.clip_len, 3, 224, 398  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
+        B, T, C, H, W = 1, args.clip_len, 3, 336, 597  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
         x = torch.randn(B, T, C, H, W)
 
         # Count FLOPs

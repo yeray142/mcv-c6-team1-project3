@@ -1,12 +1,12 @@
 {
     "frame_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/frames/398x224",
-    "save_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/SN-BAS-2025_savedata_baseline_x3d_radi4",
+    "save_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/SN-BAS-2025_savedata_baseline_x3d_radi4_clip75",
     "labels_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data",
     "store_mode": "load",
     "task": "spotting",
 
     "batch_size": 4,
-    "clip_len": 50,
+    "clip_len": 100,
     "stride": 2,
     "dataset": "soccernetball",
     "epoch_num_frames": 500000,
@@ -16,7 +16,7 @@
     "num_epochs": 20,
     "warm_up_epochs": 3,
 
-    "only_test": true,
+    "only_test": false,
     "device": "cuda",
     "num_workers": 4,
 
