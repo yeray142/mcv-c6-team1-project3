@@ -67,6 +67,11 @@ def update_args(args, config):
     args.crop_dim = config['crop_dim'] if 'crop_dim' in config else 224
     args.radi_displacement = config['radi_displacement'] if 'radi_displacement' in config else 0.0
     args.n_layers = config['n_layers'] if 'n_layers' in config else 1
+    args.mixup = config['mixup'] if 'mixup' in config else False
+
+    # TCNN
+    args.kernel_size = config['kernel_size'] if 'kernel_size' in config else 4
+    args.num_channels = config['num_channels'] if 'num_channels' in config else 64
 
     return args
 
