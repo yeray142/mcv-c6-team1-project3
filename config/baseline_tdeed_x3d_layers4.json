@@ -1,0 +1,30 @@
+{
+    "frame_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/frames/398x224",
+    "save_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data/SN-BAS-2025_savedata_baseline_x3d",
+    "labels_dir": "/data/cvcqml/common/ycordero/mcv-c6-project2/data",
+    "store_mode": "load",
+    "task": "spotting",
+
+    "batch_size": 4,
+    "clip_len": 50,
+    "stride": 2,
+    "dataset": "soccernetball",
+    "epoch_num_frames": 500000,
+    "feature_arch": "x3d_m",
+    "learning_rate": 0.0008,
+    "num_classes": 12,
+    "num_epochs": 20,
+    "warm_up_epochs": 3,
+
+    "only_test": true,
+    "device": "cuda",
+    "num_workers": 8,
+
+    "use_gray": false,
+    "temporal_arch": "ed_sgp_mixer",
+    "sgp_ks": 9,
+    "sgp_r": 4,
+    "crop_dim": -1,
+    "radi_displacement": 0,
+    "n_layers": 4
+}
