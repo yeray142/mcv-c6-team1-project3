@@ -24,7 +24,7 @@ def get_datasets(args):
 
     dataset_kwargs = {
         'stride': stride, 'overlap': overlap, 'dataset': args.dataset, 'labels_dir': args.labels_dir, 'task': args.task,
-        'radi_displacement': args.radi_displacement
+        'radi_displacement': args.radi_displacement, 'mixup': args.mixup
     }
 
     print('Dataset size:', dataset_len)
@@ -34,6 +34,9 @@ def get_datasets(args):
         classes, os.path.join('data', args.dataset, 'train.json'),
         args.frame_dir, args.store_dir, args.store_mode, args.clip_len, dataset_len, **dataset_kwargs)
     train_data.print_info()
+    
+    # Disable mixup for validation
+    dataset_kwargs['mixup'] = False 
 
     # Load validation dataset
     val_data = ActionSpotDataset(
@@ -46,6 +49,7 @@ def get_datasets(args):
     dataset_kwargs['overlap'] = 0
     # Remove radi_displacement from dataset_kwargs
     dataset_kwargs.pop('radi_displacement', None)
+    dataset_kwargs.pop('mixup', None)
     test_data = ActionSpotVideoDataset(classes, os.path.join('data', args.dataset, 'test.json'),
         args.frame_dir, args.clip_len, **dataset_kwargs)
     test_data.print_info()

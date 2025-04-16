@@ -38,6 +38,7 @@ class ActionSpotDataset(Dataset):
             stride=1,                   # Downsample frame rate
             overlap=1,                  # Overlap between clips (in proportion to clip_len)
             radi_displacement=0,        # Radius displacement
+            mixup=False,                # Mixup augmentation
             pad_len=DEFAULT_PAD_LEN,    # Number of frames to pad the start
                                         # and end of videos
             dataset = 'soccernetball',  # Dataset name
@@ -68,6 +69,12 @@ class ActionSpotDataset(Dataset):
         
         # Label modifications
         self._radi_displacement = radi_displacement
+        assert radi_displacement >= 0, 'Radi displacement must be >= 0'
+        
+        # Mixup augmentation
+        self._mixup = mixup
+        print('Mixup:', self._mixup)
+        assert mixup in [True, False], 'Mixup must be True or False'
 
         #Frame reader class
         self._frame_reader = FrameReader(frame_dir, dataset = dataset)
@@ -206,6 +213,17 @@ class ActionSpotDataset(Dataset):
 
     def __getitem__(self, unused):
         ret = self._get_one()
+        
+        # Mixup augmentation
+        if self._mixup:
+            mix = self._get_one() # sample another clip
+            
+            ret['frame2'] = mix['frame']
+            ret['contains_event2'] = mix['contains_event']
+            ret['label2'] = mix['label']
+            if self._radi_displacement > 0:
+                ret['labelD2'] = mix['labelD']
+        
         return ret
 
     def __len__(self):
