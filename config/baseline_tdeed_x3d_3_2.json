@@ -20,12 +20,11 @@
     "device": "cuda",
     "num_workers": 4,
 
-    "temporal_arch": "tcn",
-    "num_channels": 64,
-    "n_layers": 2,
-    "kernel_size": 4,
-
-    "crop_dim": -1,
     "use_gray": false,
-    "radi_displacement": 0
+    "temporal_arch": "ed_sgp_mixer",
+    "sgp_ks": 3,
+    "sgp_r": 2,
+    "crop_dim": -1,
+    "radi_displacement": 0,
+    "n_layers": 2
 }

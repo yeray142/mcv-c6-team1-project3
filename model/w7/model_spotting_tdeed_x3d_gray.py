@@ -5,9 +5,10 @@ File containing the main model.
 #Standard imports
 import torch
 import math
-import timm
+import random
 import torchvision.transforms as T
 import torch.nn.functional as F
+from pytorch_tcn import TCN
 from fvcore.nn import FlopCountAnalysis, flop_count_table
 from contextlib import nullcontext
 from tqdm import tqdm
@@ -54,39 +55,26 @@ class Model(BaseRGBModel):
         def __init__(self, args = None):
             super().__init__()
             self._feature_arch = args.feature_arch
-            assert 'rny' in self._feature_arch, 'Only rny supported for now'
             self._double_head = False
             
             # Check if feature architecture is supported
             self._use_gray = args.use_gray
-            #assert not self._use_gray, 'Gray not supported for this model yet'
             self._temp_arch = args.temporal_arch
-            assert self._temp_arch in ['ed_sgp_mixer'], 'Only ed_sgp_mixer supported for now'
             self._radi_displacement = args.radi_displacement
             
             # Feature extractor
-            if self._feature_arch.startswith(('rny002', 'rny004', 'rny008')):
-                features = timm.create_model({
-                    'rny002': 'regnety_002',
-                    'rny004': 'regnety_004',
-                    'rny008': 'regnety_008',
-                }[self._feature_arch.rsplit('_', 1)[0]], pretrained=True)
-                feat_dim = features.head.fc.in_features
-
-                # Remove final classification layer
-                features.head.fc = nn.Identity()
+            if self._feature_arch.startswith('x3d_m'):
+                features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_m', pretrained=True)
+                feat_dim = 192
+                self._d = feat_dim
+            elif self._feature_arch.startswith('x3d_l'):
+                features = torch.hub.load('facebookresearch/pytorchvideo', 'x3d_l', pretrained=True)
+                feat_dim = 192
                 self._d = feat_dim
             else:
                 raise NotImplementedError(args._feature_arch)
-            
-            self._require_clip_len = -1
-            if self._feature_arch.endswith('_gsm'):
-                make_temporal_shift(features, args.clip_len, mode='gsm')
-                self._require_clip_len = args.clip_len
-            elif self._feature_arch.endswith('_gsf'):
-                make_temporal_shift(features, args.clip_len, mode='gsf')
-                self._require_clip_len = args.clip_len
-            
+
+            # Model parameters
             self._features = features
             self._feat_dim = self._d
             feat_dim = self._d
@@ -98,6 +86,23 @@ class Model(BaseRGBModel):
             if self._temp_arch == 'ed_sgp_mixer':
                 self._temp_fine = EDSGPMIXERLayers(feat_dim, args.clip_len, num_layers=args.n_layers, ks = args.sgp_ks, k = args.sgp_r, concat = True)
                 self._pred_fine = FCLayers(self._feat_dim, args.num_classes+1)
+            elif self._temp_arch == 'tcn':
+                # TODO: This must be tested properly.
+                print(f"TCNN (kernel {args.kernel_size}, {args.num_channels} channels, {args.n_layers} layers)")
+
+                num_channels = [args.num_channels for _ in range(args.n_layers)]
+                self._temp_fine = TCN(
+                    num_inputs=self._feat_dim,
+                    num_channels=num_channels,
+                    kernel_size=args.kernel_size,
+                    dilations=None, # auto-computed
+                    dilation_reset=None,
+                    dropout=0.1,
+                    causal=True,
+                    use_skip_connections=True,
+                    input_shape='NLC', # transformers shape [B, T, D]
+                    output_projection=args.num_classes + 1 # directly project to classes
+                )
             else:
                 raise NotImplementedError(self._temp_arch)
             
@@ -105,20 +110,16 @@ class Model(BaseRGBModel):
             if self._radi_displacement > 0:
                 self._pred_displ = FCLayers(self._feat_dim, 1)
 
-            # Augmentations and crop
-            self.augmentation = T.Compose([
-                T.RandomApply([T.ColorJitter(hue = 0.2)], p = 0.25),
-                T.RandomApply([T.ColorJitter(saturation = (0.7, 1.2))], p = 0.25),
-                T.RandomApply([T.ColorJitter(brightness = (0.7, 1.2))], p = 0.25),
-                T.RandomApply([T.ColorJitter(contrast = (0.7, 1.2))], p = 0.25),
-                T.RandomApply([T.GaussianBlur(5)], p = 0.25),
-                T.RandomHorizontalFlip(),
-            ])
-
             # Standarization
             self.standarization = T.Compose([
-                T.Normalize(mean = (0.485, 0.456, 0.406), std = (0.229, 0.224, 0.225)) #Imagenet mean and std
+                T.Normalize(mean = (0.45), 
+                            std = (0.225)) # Kinetics-400 stats
             ])
+
+            # Converts from grayscale to the expected input shape
+            self.grayscale_to_input = nn.Conv3d(1, 3, kernel_size=1, stride=1, padding=0, bias=False)
+            with torch.no_grad():
+                self.grayscale_to_input.weight.fill_(1.0/3.0) # Using equal weights for channels
             
             # Croping in case of using it
             self.croping = args.crop_dim
@@ -145,23 +146,39 @@ class Model(BaseRGBModel):
             if self.training:
                 x = self.augment(x) #augmentation per-batch
             x = self.standarize(x) #standarization imagenet stats
-                        
-            im_feat = self._features(
-                x.view(-1, channels, height, width)
-            ).reshape(batch_size, clip_len, self._d) #B, T, D
             
-            im_feat = self.temp_enc(im_feat) #B, T, D
+            # Get image features from X3D
+            x = x.permute(0, 2, 1, 3, 4)
+
+            # Copy of gray image for 3 channels:
+            x = self.grayscale_to_input(x) # (B, 3, T, H, W)
+
+            for i, block in enumerate(self._features.blocks):
+                if i == 5:
+                    break # Skip ResNet projection head
+                x = block(x)
+
+            x = F.adaptive_avg_pool3d(x, (x.size(2), 1, 1))  # (B, C, T', 1, 1)
+            x = x.squeeze(-1).squeeze(-1)  # (B, C, T')
+            
+            # Rearrange to (B, T', C) for Transformer
+            im_feat = x.permute(0, 2, 1)  # (B, T', C)
+            im_feat = self.temp_enc(im_feat) # B, T, D
 
             if self._temp_arch == 'ed_sgp_mixer':
                 im_feat = self._temp_fine(im_feat)
                 
-                # TODO: Implement radi displacement in dataset labels
+                # Displacement prediction
                 if self._radi_displacement > 0:
                     displ_feat = self._pred_displ(im_feat).squeeze(-1)
                     im_feat = self._pred_fine(im_feat)
                     return {'im_feat': im_feat, 'displ_feat': displ_feat}
                 
                 im_feat = self._pred_fine(im_feat)
+                return im_feat
+            elif self._temp_arch == 'tcn':
+                # TODO: Missing testing.
+                im_feat = self._temp_fine(im_feat)
                 return im_feat
             else:
                 raise NotImplementedError(self._temp_arch)
@@ -170,8 +187,28 @@ class Model(BaseRGBModel):
             return x / 255.
         
         def augment(self, x):
-            for i in range(x.shape[0]):
-                x[i] = self.augmentation(x[i])
+            # Original augmentations but applied consistently across frames
+            # x shape: (B, T, C, H, W)
+            
+            # Generate random parameters ONCE per clip
+            flip_prob = torch.rand(x.size(0)) < 0.5  # (B,) boolean tensor
+            jitter_params = torch.rand(x.size(0), 2) # (B, 4) for brightness, contrast, saturation, hue
+            
+            # Apply same augmentation to all frames in a clip
+            for b in range(x.size(0)):
+                # Horizontal flip (same for all frames)
+                if flip_prob[b]:
+                    x[b] = T.functional.hflip(x[b])
+                
+                # Color jitter (same parameters for all frames)
+                x[b] = T.functional.adjust_brightness(x[b], jitter_params[b,0] * 0.2 + 0.9)  # 0.9-1.1
+                x[b] = T.functional.adjust_contrast(x[b], jitter_params[b,1] * 0.2 + 0.9)
+                #x[b] = T.functional.adjust_saturation(x[b], jitter_params[b,2] * 0.2 + 0.9)
+                #x[b] = T.functional.adjust_hue(x[b], jitter_params[b,3] * 0.1 - 0.05)  # -0.05-0.05
+                
+                # Gaussian blur (same for all frames)
+                if torch.rand(1) < 0.25:
+                    x[b] = T.functional.gaussian_blur(x[b], kernel_size=5)
             return x
 
         def standarize(self, x):
@@ -191,7 +228,7 @@ class Model(BaseRGBModel):
         self._model = Model.Impl(args=args)
 
         # Compute FLOPs of the model
-        B, T, C, H, W = 1, args.clip_len, 3, 224, 398  # Example: 1 batch, T frames, 3 channels, 224x398 resolution
+        B, T, C, H, W = 1, args.clip_len, 1, 448, 796  # Example: 1 batch, 16 frames, 3 channels, 224x224 resolution
         x = torch.randn(B, T, C, H, W)
 
         # Count FLOPs
@@ -226,6 +263,39 @@ class Model(BaseRGBModel):
                 
                 if 'labelD' in batch.keys():
                     labelD = batch['labelD'].to(self.device).float()
+                
+                # If mixup is used, we need to mix the frames and labels
+                if 'frame2' in batch.keys():
+                    frame2 = batch['frame2'].to(self.device).float()
+                    label2 = batch['label2']
+                    label2 = label2.to(self.device)
+
+                    if 'labelD2' in batch.keys():
+                        labelD2 = batch['labelD2'].to(self.device).float()
+                        labelD_dist = torch.zeros((labelD.shape[0], label.shape[1])).to(self.device)
+
+                    l = [random.betavariate(0.2, 0.2) for _ in range(frame2.shape[0])]
+
+                    label_dist = torch.zeros((label.shape[0], label.shape[1], self._num_classes+1)).to(self.device)
+
+                    for i in range(frame2.shape[0]):
+                        frame[i] = l[i] * frame[i] + (1 - l[i]) * frame2[i]
+                        lbl1 = label[i]
+                        lbl2 = label2[i]
+
+                        label_dist[i, range(label.shape[1]), lbl1] += l[i]
+                        label_dist[i, range(label2.shape[1]), lbl2] += 1 - l[i]
+
+                        if 'labelD2' in batch.keys():
+                            labelD_dist[i] = l[i] * labelD[i] + (1 - l[i]) * labelD2[i]
+
+                    label = label_dist
+                    if 'labelD2' in batch.keys():
+                        labelD = labelD_dist
+                
+                # Depends on whether mixup is used
+                label = label.flatten() if len(label.shape) == 2 \
+                    else label.view(-1, label.shape[-1])
 
                 with torch.cuda.amp.autocast():
                     pred = self._model(frame)
@@ -234,15 +304,16 @@ class Model(BaseRGBModel):
                     if 'labelD' in batch.keys():
                         predD = pred['displ_feat']
                         pred = pred['im_feat']
-                    
-                    pred = pred.view(-1, self._num_classes + 1) # B*T, num_classes
-                    label = label.view(-1) # B*T
+
+                    pred = pred.contiguous().view(-1, self._num_classes + 1) # B*T, num_classes
+                    # label = label.view(-1) # B*T
                     loss = F.cross_entropy(
                             pred, label, reduction='mean', weight = weights)
                     
                     if 'labelD' in batch.keys():
                         lossD = F.mse_loss(predD, labelD, reduction = 'none')
                         lossD = (lossD).mean()
+                        print(f"Loss is sum of CE & D: {loss}, {lossD}")
                         loss = loss + lossD
 
                 if optimizer is not None:

@@ -23,7 +23,7 @@
     "temporal_arch": "tcn",
     "num_channels": 64,
     "n_layers": 2,
-    "kernel_size": 4,
+    "kernel_size": 3,
 
     "crop_dim": -1,
     "use_gray": false,

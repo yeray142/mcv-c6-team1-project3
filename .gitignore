@@ -13,3 +13,4 @@ job_*
 data/
 jobs/
 .ipynb_checkpoints/
+*.jpg
